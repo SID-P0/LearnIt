@@ -1,0 +1,118 @@
+/* ============================================
+   LearnIt — Global Design System
+   ============================================ */
+
+/* ---------- CSS Custom Properties ---------- */
+:root {
+  /* Background & Canvas */
+  --bg-deep: #000000;
+  --bg-canvas: #000000;
+  --grid-line: rgba(255, 255, 255, 0.04);
+  --grid-line-major: rgba(255, 255, 255, 0.07);
+
+  /* Surface Colors */
+  --surface-1: rgba(255, 255, 255, 0.03);
+  --surface-2: rgba(255, 255, 255, 0.06);
+  --surface-3: rgba(255, 255, 255, 0.09);
+
+  /* Text */
+  --text-primary: rgba(255, 255, 255, 0.92);
+  --text-secondary: rgba(255, 255, 255, 0.6);
+  --text-muted: rgba(255, 255, 255, 0.35);
+
+  /* Accent */
+  --accent: #6c63ff;
+  --accent-glow: rgba(108, 99, 255, 0.15);
+  --accent-soft: rgba(108, 99, 255, 0.08);
+
+  /* Connection lines */
+  --line-color: rgba(255, 255, 255, 0.12);
+  --line-color-active: rgba(108, 99, 255, 0.4);
+
+  /* Box */
+  --box-bg: rgba(18, 18, 28, 0.85);
+  --box-header-bg: rgba(255, 255, 255, 0.05);
+  --box-border: rgba(255, 255, 255, 0.06);
+  --box-border-hover: rgba(255, 255, 255, 0.12);
+  --box-border-selected: rgba(108, 99, 255, 0.4);
+  --box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+  --box-shadow-hover: 0 8px 32px rgba(0, 0, 0, 0.5);
+
+  /* Chat input */
+  --chat-bg: rgba(18, 18, 28, 0.7);
+  --chat-border: rgba(255, 255, 255, 0.08);
+
+  /* Spacing */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+
+  /* Transitions */
+  --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-med: 250ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-slow: 400ms cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Font */
+  --font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+/* ---------- Reset & Base ---------- */
+*,
+*::before,
+*::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  font-family: var(--font-family);
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text-primary);
+  background-color: var(--bg-deep);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  touch-action: none;
+}
+
+/* ---------- Selection ---------- */
+::selection {
+  background: var(--accent);
+  color: white;
+}
+
+/* ---------- Scrollbar (if needed) ---------- */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* ---------- Utility Classes ---------- */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

@@ -1,0 +1,5 @@
+fastapi
+uvicorn[standard]
+surya-ocr
+pillow
+torch
