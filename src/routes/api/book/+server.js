@@ -6,7 +6,7 @@ import { resolve } from 'path';
  * In future this could be extended to serve user-uploaded books.
  */
 export function GET() {
-  const pdfPath = resolve('Information technology project management 2014.pdf');
+  const pdfPath = resolve('report.pdf');
 
   try {
     const data = readFileSync(pdfPath);

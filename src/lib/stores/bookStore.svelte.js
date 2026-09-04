@@ -1,11 +1,11 @@
 /**
- * Book Store — Surya OCR-powered PDF reader.
+ * Book Store — Chandra OCR-powered PDF reader.
  *
  * Pipeline:
  *   1. Load PDF with pdfjs
  *   2. Extract text from first ~30 pages via getTextContent() → detect chapters
  *   3. Render chapter pages as images via canvas → display in reader
- *   4. Send each page image to Surya OCR (background) → cache text for Q&A
+ *   4. Send each page image to Chandra OCR (background) → cache text for Q&A
  *   5. Support incremental scanning (user can add more pages later)
  */
 
@@ -283,17 +283,7 @@ async function loadPdf(url = '/api/book') {
     // Scan for TOC (extracts text from first 30 pages for chapter detection)
     await scanBookStructure();
 
-    // OVERRIDE for testing: hardcode single page
-    const TARGET_PAGE = 78;
-    console.log(`[BookStore] Hardcoded test mode — targeting page ${TARGET_PAGE}`);
-    chapters = [{
-      number: 1,
-      name: `Page ${TARGET_PAGE}`,
-      startPage: TARGET_PAGE,
-      endPage: TARGET_PAGE
-    }];
-
-    // Navigate to the hardcoded chapter (renders page image + triggers OCR)
+    // Navigate to the first chapter (renders page image + triggers OCR)
     await goToChapter(0);
   } catch (err) {
     console.error('[BookStore] Failed to load PDF:', err);
@@ -369,7 +359,7 @@ async function ocrSinglePage(pageNum) {
     return;
   }
 
-  console.log(`[BookStore] Sending page ${pageNum} to Surya OCR server...`);
+  console.log(`[BookStore] Sending page ${pageNum} to Chandra OCR server...`);
 
   try {
     const res = await fetch('/api/ocr', {

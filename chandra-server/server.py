@@ -1,20 +1,17 @@
 """
-Surya OCR FastAPI Server (v0.22.1 compatible)
+Chandra OCR FastAPI Server
 Accepts a single base64-encoded page image and returns structured OCR results.
 Runs locally on Apple Silicon (MPS) — no API keys, no cloud, no cost.
 """
 
 import base64
-import os
 import io
 import logging
-import re
 import time
+import os
 
-# ── Surya 0.22.x requires llama.cpp backend; disable guided grammar
-# to avoid GBNF parse errors with the brew-installed llama-server.
-os.environ.setdefault("SURYA_GUIDED_LAYOUT", "False")
-os.environ.setdefault("SURYA_GUIDED_TABLE_REC", "False")
+# Enable GPU acceleration on Apple Silicon
+os.environ["TORCH_DEVICE"] = "mps"
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -27,10 +24,10 @@ logging.basicConfig(
     format="[%(asctime)s] %(levelname)s  %(message)s",
     datefmt="%H:%M:%S",
 )
-log = logging.getLogger("surya-server")
+log = logging.getLogger("chandra-server")
 
 # ── FastAPI App ──────────────────────────────────────────
-app = FastAPI(title="LearnIt Surya OCR Server")
+app = FastAPI(title="LearnIt Chandra OCR Server")
 
 app.add_middleware(
     CORSMiddleware,
@@ -39,27 +36,24 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ── Surya Models (loaded once at startup) ────────────────
-recognition_predictor = None
-layout_predictor = None
+# ── Chandra Model (loaded once at startup) ───────────────
+inference_manager = None
 
 
 @app.on_event("startup")
 async def load_models():
-    """Load Surya models into memory once. Takes ~10s on first run (downloads weights)."""
-    global recognition_predictor, layout_predictor
+    """Load Chandra OCR model into memory once. Takes ~10s on first run (downloads weights)."""
+    global inference_manager
 
-    log.info("Loading Surya models... (first run downloads ~2GB of weights)")
+    log.info("Loading Chandra OCR model (HuggingFace local)... (first run downloads weights)")
     start = time.time()
 
-    from surya.recognition import RecognitionPredictor
-    from surya.layout import LayoutPredictor
+    from chandra.model import InferenceManager
 
-    layout_predictor = LayoutPredictor()
-    recognition_predictor = RecognitionPredictor()
+    inference_manager = InferenceManager(method="hf")
 
     elapsed = time.time() - start
-    log.info(f"Surya models loaded in {elapsed:.1f}s")
+    log.info(f"Chandra OCR model loaded in {elapsed:.1f}s")
 
 
 # ── Request / Response Models ────────────────────────────
@@ -82,23 +76,13 @@ class OcrResponse(BaseModel):
     processing_time_ms: int
 
 
-def _extract_text_from_html(html_str: str) -> str:
-    """Strip HTML tags from Surya's html field to get plain text."""
-    # Remove HTML tags
+def _strip_html_tags(html_str: str) -> str:
+    """Strip HTML tags from a chunk's content to get plain text."""
+    import re
     text = re.sub(r'<[^>]+>', '', html_str)
-    # Decode common HTML entities
     text = text.replace('&nbsp;', ' ').replace('&amp;', '&')
     text = text.replace('&lt;', '<').replace('&gt;', '>').replace('&quot;', '"')
     return text.strip()
-
-
-def _polygon_to_bbox(polygon: list) -> list:
-    """Convert a list of [x, y] points to [x1, y1, x2, y2] bbox."""
-    if not polygon:
-        return [0, 0, 0, 0]
-    xs = [p[0] for p in polygon]
-    ys = [p[1] for p in polygon]
-    return [min(xs), min(ys), max(xs), max(ys)]
 
 
 # ── Endpoints ────────────────────────────────────────────
@@ -106,13 +90,13 @@ def _polygon_to_bbox(polygon: list) -> list:
 async def health():
     return {
         "status": "ok",
-        "models_loaded": recognition_predictor is not None,
+        "models_loaded": inference_manager is not None,
     }
 
 
 @app.post("/ocr", response_model=OcrResponse)
 async def ocr(req: OcrRequest):
-    """Process a single page image through Surya OCR."""
+    """Process a single page image through Chandra OCR."""
     start = time.time()
 
     # 1. Decode base64 image
@@ -126,45 +110,48 @@ async def ocr(req: OcrRequest):
     page_width, page_height = image.size
     log.info(f"Processing image: {page_width}x{page_height}")
 
-    # 2. Run layout detection
-    log.info("Running layout detection...")
-    layout_results = layout_predictor([image])
-    layout = layout_results[0]
-    log.info(f"Layout detection complete — {len(layout.bboxes)} bounding boxes")
+    # 2. Run Chandra OCR
+    log.info("Running Chandra OCR inference...")
 
-    # 3. Run OCR recognition
-    log.info("Running text recognition...")
-    ocr_results = recognition_predictor([image], [layout])
-    ocr_result = ocr_results[0]
+    from chandra.model.schema import BatchInputItem
 
-    # 4. Build structured response
+    batch = [BatchInputItem(image=image)]
+    results = inference_manager.generate(batch)
+    result = results[0]
+
+    log.info(f"Chandra OCR raw result — markdown length: {len(result.markdown)}, chunks: {len(result.chunks)}, error: {result.error}")
+
+    # 3. Build structured response from chunks
+    #    Chandra chunks have: { bbox: [x1,y1,x2,y2], label: str, content: str (HTML) }
     blocks = []
     full_text_parts = []
 
-    for block in ocr_result.blocks:
-        # Surya 0.22.x: text is in the `html` field, bbox is in `polygon`
-        block_type = getattr(block, "label", "Text") or "Text"
-        block_html = getattr(block, "html", "") or ""
-        block_text = _extract_text_from_html(block_html)
+    for chunk in result.chunks:
+        label = chunk.get("label", "Text") or "Text"
+        content_html = chunk.get("content", "") or ""
+        bbox = chunk.get("bbox", [0, 0, 0, 0]) or [0, 0, 0, 0]
 
-        # Get bbox from polygon (Surya 0.22.x uses polygon, not bbox)
-        if hasattr(block, "polygon") and block.polygon:
-            block_bbox = _polygon_to_bbox(block.polygon)
-        elif hasattr(block, "_polygon") and block._polygon:
-            block_bbox = _polygon_to_bbox(block._polygon)
-        else:
-            block_bbox = [0, 0, 0, 0]
+        # Extract plain text from HTML content
+        plain_text = _strip_html_tags(content_html)
 
-        block_confidence = getattr(block, "confidence", 0.0) or 0.0
-
-        if block_text.strip():
+        if plain_text.strip():
             blocks.append(OcrBlock(
-                type=block_type,
-                text=block_text,
-                bbox=block_bbox,
-                confidence=round(float(block_confidence), 3),
+                type=label,
+                text=plain_text,
+                bbox=list(bbox),
+                confidence=0.95 if not result.error else 0.5,
             ))
-            full_text_parts.append(block_text)
+            full_text_parts.append(plain_text)
+
+    # Fallback: if no chunks but markdown is available, use that
+    if not blocks and result.markdown.strip():
+        blocks.append(OcrBlock(
+            type="Text",
+            text=result.markdown.strip(),
+            bbox=[0, 0, page_width, page_height],
+            confidence=0.9,
+        ))
+        full_text_parts.append(result.markdown.strip())
 
     elapsed_ms = int((time.time() - start) * 1000)
     log.info(f"OCR complete: {len(blocks)} blocks, {elapsed_ms}ms, {len(full_text_parts)} text parts")

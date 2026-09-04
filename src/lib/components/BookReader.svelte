@@ -298,7 +298,7 @@
           {:else if bookStore.currentPageImage}
             <div class="loading-state ocr-loading">
               <div class="loader"><div class="loader-ring"></div></div>
-              <p class="loading-text">Extracting text via Surya OCR...</p>
+              <p class="loading-text">Extracting text via Chandra OCR...</p>
             </div>
           {/if}
         </div>

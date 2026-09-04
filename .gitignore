@@ -21,3 +21,9 @@ Thumbs.db
 # Vite
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+# Python
+chandra-server/venv/
+chandra-server/__pycache__/
+__pycache__/
+*.pyc
