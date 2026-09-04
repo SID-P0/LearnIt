@@ -115,18 +115,21 @@ async def ocr(req: OcrRequest):
 
     from chandra.model.schema import BatchInputItem
 
-    batch = [BatchInputItem(image=image)]
+    batch = [BatchInputItem(image=image, prompt_type="ocr_layout")]
     results = inference_manager.generate(batch)
     result = results[0]
 
-    log.info(f"Chandra OCR raw result — markdown length: {len(result.markdown)}, chunks: {len(result.chunks)}, error: {result.error}")
+    markdown_len = len(result.markdown) if result.markdown else 0
+    chunks_len = len(result.chunks) if result.chunks else 0
+    log.info(f"Chandra OCR raw result — markdown length: {markdown_len}, chunks: {chunks_len}, error: {result.error}")
 
     # 3. Build structured response from chunks
     #    Chandra chunks have: { bbox: [x1,y1,x2,y2], label: str, content: str (HTML) }
     blocks = []
     full_text_parts = []
 
-    for chunk in result.chunks:
+    safe_chunks = result.chunks if result.chunks else []
+    for chunk in safe_chunks:
         label = chunk.get("label", "Text") or "Text"
         content_html = chunk.get("content", "") or ""
         bbox = chunk.get("bbox", [0, 0, 0, 0]) or [0, 0, 0, 0]
@@ -143,15 +146,15 @@ async def ocr(req: OcrRequest):
             ))
             full_text_parts.append(plain_text)
 
-    # Fallback: if no chunks but markdown is available, use that
-    if not blocks and result.markdown.strip():
+    safe_markdown = result.markdown.strip() if result.markdown else ""
+    if not blocks and safe_markdown:
         blocks.append(OcrBlock(
             type="Text",
-            text=result.markdown.strip(),
+            text=safe_markdown,
             bbox=[0, 0, page_width, page_height],
             confidence=0.9,
         ))
-        full_text_parts.append(result.markdown.strip())
+        full_text_parts.append(safe_markdown)
 
     elapsed_ms = int((time.time() - start) * 1000)
     log.info(f"OCR complete: {len(blocks)} blocks, {elapsed_ms}ms, {len(full_text_parts)} text parts")
