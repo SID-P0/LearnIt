@@ -1,42 +1,36 @@
-# sv
+# LearnIt
 
-Everything you need to build a Svelte project, powered by [`sv`](https://github.com/sveltejs/cli).
+LearnIt uses a SvelteKit frontend for the user interface, and a Python backend powering Chandra OCR for document processing. You need to run both to use the app.
 
-## Creating a project
+## 1. Run the Chandra OCR Backend
 
-If you're seeing this, you've probably already done this step. Congrats!
+The backend dynamically detects and runs on Apple Silicon (MPS) or Nvidia (CUDA) GPUs for fast inference.
 
-```sh
-# create a new project
-npx sv create my-app
+Open a terminal tab and run:
+
+```bash
+cd chandra-server
+
+# If it's your first time, create the environment and install dependencies:
+# python3 -m venv venv
+# source venv/bin/activate
+# pip install -r requirements.txt
+# pip install accelerate
+
+# Start the virtual environment and the server
+source venv/bin/activate
+python server.py
 ```
 
-To recreate this project with the same configuration:
+*Note: The very first time you start the server on a new machine, it will download the 10.5 GB Chandra model. PyTorch will also take 1-3 minutes to compile the GPU shaders on its first scan.*
 
-```sh
-# recreate this project
-npx sv@0.16.3 create --template minimal --no-types --install npm ./
-```
+## 2. Run the SvelteKit Frontend
 
-## Developing
+Once the Python server says `Uvicorn running on http://0.0.0.0:8010`, open a **second** terminal tab in the root project folder:
 
-Once you've created a project and installed dependencies with `npm install` (or `pnpm install` or `yarn`), start a development server:
-
-```sh
+```bash
+npm install
 npm run dev
-
-# or start the server and open the app in a new browser tab
-npm run dev -- --open
 ```
 
-## Building
-
-To create a production version of your app:
-
-```sh
-npm run build
-```
-
-You can preview the production build with `npm run preview`.
-
-> To deploy your app, you may need to install an [adapter](https://svelte.dev/docs/kit/adapters) for your target environment.
+Open `http://localhost:5173` in your browser to view the app!
