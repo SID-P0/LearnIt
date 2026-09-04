@@ -9,9 +9,15 @@ import io
 import logging
 import time
 import os
+import torch
 
-# Enable GPU acceleration on Apple Silicon
-os.environ["TORCH_DEVICE"] = "mps"
+# Dynamically select the best available GPU (Nvidia CUDA or Apple MPS)
+if torch.cuda.is_available():
+    os.environ["TORCH_DEVICE"] = "cuda"
+elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+    os.environ["TORCH_DEVICE"] = "mps"
+else:
+    os.environ["TORCH_DEVICE"] = "cpu"
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
