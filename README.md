@@ -18,6 +18,7 @@ cd chandra-server
 # pip install accelerate
 
 # Start the virtual environment and the server
+.\venv\Scripts\activate
 source venv/bin/activate
 python server.py
 ```

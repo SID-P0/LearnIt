@@ -115,6 +115,16 @@ async function scanBookStructure() {
   const detectedChapters = parseChaptersFromText(pageTexts);
 
   if (detectedChapters.length > 0) {
+    // Prevent skipping pages 1 to N if Chapter 1 starts late
+    if (detectedChapters[0].startPage > 1) {
+      detectedChapters.unshift({
+        number: 0,
+        name: 'Front Matter',
+        startPage: 1,
+        endPage: detectedChapters[0].startPage - 1
+      });
+    }
+    
     bookTitle = detectBookTitle(pageTexts) || 'Untitled Book';
     chapters = detectedChapters;
     scanStatus = 'done';
@@ -328,15 +338,28 @@ async function goToChapter(index) {
       const image = await renderPageImage(p);
       pageImages = [...pageImages, { pageNum: p, image }];
 
-      // Trigger OCR for this page (async, non-blocking)
-      ocrSinglePage(p);
-
       // If it's the first page, mark as loaded so the UI shows immediately
       if (p === start) {
         chapterLoadStatus = 'done';
       }
     } catch (err) {
       console.warn(`[BookStore] Failed to render page ${p}:`, err);
+    }
+  }
+
+  // Kick off OCR
+  if (pageImages.length > 0) {
+    // 1. Process the very first page immediately so the user can start reading!
+    ocrSinglePage(pageImages[0].pageNum);
+    
+    // 2. Batch the remaining pages in chunks of 4
+    const remainingPages = pageImages.slice(1);
+    const BATCH_SIZE = 4;
+    
+    for (let i = 0; i < remainingPages.length; i += BATCH_SIZE) {
+        const chunk = remainingPages.slice(i, i + BATCH_SIZE);
+        // Fire and forget (async background processing)
+        ocrBatchPages(chunk.map(p => p.pageNum));
     }
   }
 
@@ -387,6 +410,50 @@ async function ocrSinglePage(pageNum) {
     }
   } catch (err) {
     console.warn(`[BookStore] OCR page ${pageNum} error:`, err);
+  }
+}
+
+/**
+ * Trigger OCR scanning for a batch of pages.
+ */
+async function ocrBatchPages(pageNums) {
+  const pagesToProcess = pageNums.filter(num => !ocrCache[num]);
+  if (pagesToProcess.length === 0) return;
+
+  const images = pagesToProcess.map(num => pageImages.find(p => p.pageNum === num)?.image).filter(Boolean);
+  if (images.length === 0) return;
+
+  console.log(`[BookStore] Sending batch of ${images.length} pages to Chandra OCR server...`);
+
+  try {
+    const res = await fetch('/api/ocr-batch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ images })
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      data.responses.forEach((resp, index) => {
+        const pageNum = pagesToProcess[index];
+        const ocrResult = {
+          pageNum,
+          text: resp.full_text || '',
+          blocks: resp.blocks || [],
+          width: resp.page_width || 1,
+          height: resp.page_height || 1
+        };
+        ocrCache[pageNum] = ocrResult;
+        pageOcrTexts = [...pageOcrTexts, ocrResult];
+        ocrProgress++;
+        console.log(`[BookStore] OCR page ${pageNum} (from batch) complete — ${resp.blocks?.length || 0} blocks, ${ocrResult.text.length} chars`);
+      });
+    } else {
+      const errText = await res.text();
+      console.warn(`[BookStore] OCR batch failed — HTTP ${res.status}: ${errText.substring(0, 200)}`);
+    }
+  } catch (err) {
+    console.warn(`[BookStore] OCR batch error:`, err);
   }
 }
 

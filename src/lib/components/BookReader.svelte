@@ -287,12 +287,27 @@
             <!-- Readable OCR Text: each word is a span for TTS highlighting -->
             <div class="readable-text">
               {#each ocrData.blocks as block (block.text + '_' + block.bbox.join(','))}
-                {@const words = block.text.split(/\s+/).filter(w => w.length > 0)}
-                <p class="text-line" class:header={block.type === 'SectionHeader'}>
-                  {#each words as word, wi (word + '_' + wi)}
-                    <span class="readable-word">{word} </span>
-                  {/each}
-                </p>
+                {@const isImage = block.type.toLowerCase() === 'picture' || block.type.toLowerCase() === 'image' || block.type.toLowerCase() === 'figure'}
+                
+                {#if isImage}
+                  <div class="figure-container">
+                    <div class="figure-crop-wrapper">
+                      <div class="figure-crop" style="width: {block.bbox[2] - block.bbox[0]}px; height: {block.bbox[3] - block.bbox[1]}px;">
+                        <img src={bookStore.currentPageImage.image} alt="Extracted Figure" style="margin-left: -{block.bbox[0]}px; margin-top: -{block.bbox[1]}px;" />
+                      </div>
+                    </div>
+                    {#if block.text && !block.text.startsWith('[')}
+                      <p class="figure-caption">{block.text}</p>
+                    {/if}
+                  </div>
+                {:else}
+                  {@const words = block.text.split(/\s+/).filter(w => w.length > 0)}
+                  <p class="text-line" class:header={block.type === 'SectionHeader'}>
+                    {#each words as word, wi (word + '_' + wi)}
+                      <span class="readable-word">{word}</span>{' '}
+                    {/each}
+                  </p>
+                {/if}
               {/each}
             </div>
           {:else if bookStore.currentPageImage}
@@ -661,10 +676,12 @@
 
   .text-line {
     margin: 0 0 12px 0;
-    color: var(--text-primary);
+    color: #e0e0e0;
     font-size: 16px;
     font-family: Georgia, serif;
     font-weight: 400;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
   }
 
   .text-line.header {
@@ -674,10 +691,43 @@
     color: var(--accent, #6c63ff);
   }
 
+  .figure-container {
+    margin: 32px 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .figure-crop-wrapper {
+    max-width: 100%;
+    overflow: auto;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+    background: #fff; /* White background for the image crop */
+  }
+
+  .figure-crop {
+    overflow: hidden;
+    position: relative;
+  }
+
+  .figure-crop img {
+    max-width: none;
+    display: block;
+  }
+
+  .figure-caption {
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.5);
+    font-style: italic;
+    text-align: center;
+  }
+
   .readable-word {
     cursor: default;
     transition: background-color 0.15s ease;
-    color: var(--text-primary);
+    color: #e0e0e0;
   }
 
   .readable-word.highlighted {

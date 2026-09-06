@@ -16,9 +16,16 @@ if torch.cuda.is_available():
     os.environ["TORCH_DEVICE"] = "cuda"
 elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
     os.environ["TORCH_DEVICE"] = "mps"
+    os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"
 else:
     os.environ["TORCH_DEVICE"] = "cpu"
 
+# Explicitly update chandra settings just in case it was imported early
+try:
+    from chandra.settings import settings
+    settings.TORCH_DEVICE = os.environ["TORCH_DEVICE"]
+except ImportError:
+    pass
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -46,17 +53,66 @@ app.add_middleware(
 inference_manager = None
 
 
+class MlxInferenceManager:
+    def __init__(self, model_id="jacobwindle/chandra-ocr-2-8bit-mlx"):
+        from mlx_vlm import load
+        self.model, self.processor = load(model_id)
+
+    def generate(self, batch):
+        from mlx_vlm.utils import generate_step
+        from chandra.output import parse_chunks, parse_markdown, extract_images
+        from chandra.prompts import PROMPT_MAPPING
+        from chandra.model.schema import BatchOutputItem
+        
+        output = []
+        for item in batch:
+            prompt = item.prompt if getattr(item, "prompt", None) else PROMPT_MAPPING.get(item.prompt_type, "Convert this image to markdown.")
+            
+            raw_text = generate_step(
+                model=self.model,
+                processor=self.processor,
+                image=item.image,
+                prompt=prompt,
+                max_tokens=4096,
+                verbose=False
+            )
+            
+            chunks = parse_chunks(raw_text, item.image, bbox_scale=1000)
+            
+            output.append(BatchOutputItem(
+                markdown=parse_markdown(raw_text),
+                html="",
+                chunks=chunks,
+                raw=raw_text,
+                page_box=[0, 0, item.image.width, item.image.height],
+                token_count=len(raw_text) // 4,
+                images=extract_images(raw_text, chunks, item.image),
+                error=False
+            ))
+        return output
+
+
 @app.on_event("startup")
 async def load_models():
     """Load Chandra OCR model into memory once. Takes ~10s on first run (downloads weights)."""
     global inference_manager
-
-    log.info("Loading Chandra OCR model (HuggingFace local)... (first run downloads weights)")
     start = time.time()
 
-    from chandra.model import InferenceManager
+    use_mlx = False
+    if os.environ.get("TORCH_DEVICE") == "mps":
+        try:
+            import mlx_vlm
+            use_mlx = True
+        except ImportError:
+            log.warning("Apple Silicon detected, but mlx-vlm is not installed. Falling back to PyTorch/HF. Run `pip install mlx-vlm` to speed up!")
 
-    inference_manager = InferenceManager(method="hf")
+    if use_mlx:
+        log.info("Loading Chandra OCR model (MLX Native)...")
+        inference_manager = MlxInferenceManager()
+    else:
+        log.info("Loading Chandra OCR model (HuggingFace local)... (first run downloads weights)")
+        from chandra.model import InferenceManager
+        inference_manager = InferenceManager(method="hf")
 
     elapsed = time.time() - start
     log.info(f"Chandra OCR model loaded in {elapsed:.1f}s")
@@ -82,12 +138,24 @@ class OcrResponse(BaseModel):
     processing_time_ms: int
 
 
+class OcrBatchRequest(BaseModel):
+    images: list[str]
+
+
+class OcrBatchResponse(BaseModel):
+    responses: list[OcrResponse]
+    total_processing_time_ms: int
+
+
 def _strip_html_tags(html_str: str) -> str:
     """Strip HTML tags from a chunk's content to get plain text."""
     import re
-    text = re.sub(r'<[^>]+>', '', html_str)
+    # Replace HTML tags with a space so words don't get mashed together
+    text = re.sub(r'<[^>]+>', ' ', html_str)
     text = text.replace('&nbsp;', ' ').replace('&amp;', '&')
     text = text.replace('&lt;', '<').replace('&gt;', '>').replace('&quot;', '"')
+    # Collapse multiple spaces into one
+    text = re.sub(r'\s+', ' ', text)
     return text.strip()
 
 
@@ -125,6 +193,12 @@ async def ocr(req: OcrRequest):
     results = inference_manager.generate(batch)
     result = results[0]
 
+    # LOGGING RAW OUTPUT FOR DIAGNOSTICS
+    log.info(f"=== RAW CHANDRA OUTPUT FOR SINGLE PAGE ===")
+    log.info(f"MARKDOWN: {result.markdown}")
+    log.info(f"CHUNKS: {result.chunks}")
+    log.info(f"========================================")
+
     markdown_len = len(result.markdown) if result.markdown else 0
     chunks_len = len(result.chunks) if result.chunks else 0
     log.info(f"Chandra OCR raw result — markdown length: {markdown_len}, chunks: {chunks_len}, error: {result.error}")
@@ -143,14 +217,15 @@ async def ocr(req: OcrRequest):
         # Extract plain text from HTML content
         plain_text = _strip_html_tags(content_html)
 
-        if plain_text.strip():
+        is_image = label.lower() in ("picture", "image", "figure")
+        if plain_text.strip() or is_image:
             blocks.append(OcrBlock(
                 type=label,
-                text=plain_text,
+                text=plain_text if plain_text.strip() else f"[{label}]",
                 bbox=list(bbox),
                 confidence=0.95 if not result.error else 0.5,
             ))
-            full_text_parts.append(plain_text)
+            full_text_parts.append(plain_text if plain_text.strip() else f"[{label}]")
 
     safe_markdown = result.markdown.strip() if result.markdown else ""
     if not blocks and safe_markdown:
@@ -171,6 +246,88 @@ async def ocr(req: OcrRequest):
         page_width=page_width,
         page_height=page_height,
         processing_time_ms=elapsed_ms,
+    )
+
+
+@app.post("/ocr-batch", response_model=OcrBatchResponse)
+async def ocr_batch(req: OcrBatchRequest):
+    """Process multiple page images through Chandra OCR as a batch."""
+    start = time.time()
+
+    from chandra.model.schema import BatchInputItem
+
+    batch = []
+    page_dimensions = []
+
+    # 1. Decode base64 images
+    for img_data in req.images:
+        if "," in img_data:
+            img_data = img_data.split(",", 1)[1]
+
+        image_bytes = base64.b64decode(img_data)
+        image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        page_dimensions.append(image.size)
+        batch.append(BatchInputItem(image=image, prompt_type="ocr_layout"))
+
+    log.info(f"Running Chandra OCR inference on batch of {len(batch)} images...")
+
+    # 2. Run inference in parallel
+    results = inference_manager.generate(batch)
+
+    responses = []
+    for i, result in enumerate(results):
+        page_width, page_height = page_dimensions[i]
+        blocks = []
+        full_text_parts = []
+        
+        # LOGGING RAW OUTPUT FOR DIAGNOSTICS
+        log.info(f"=== RAW CHANDRA OUTPUT FOR PAGE {i+1} ===")
+        log.info(f"MARKDOWN: {result.markdown}")
+        log.info(f"CHUNKS: {result.chunks}")
+        log.info(f"========================================")
+
+        safe_chunks = result.chunks if result.chunks else []
+        for chunk in safe_chunks:
+            label = chunk.get("label", "Text") or "Text"
+            content_html = chunk.get("content", "") or ""
+            bbox = chunk.get("bbox", [0, 0, 0, 0]) or [0, 0, 0, 0]
+
+            plain_text = _strip_html_tags(content_html)
+
+            is_image = label.lower() in ("picture", "image", "figure")
+            if plain_text.strip() or is_image:
+                blocks.append(OcrBlock(
+                    type=label,
+                    text=plain_text if plain_text.strip() else f"[{label}]",
+                    bbox=list(bbox),
+                    confidence=0.95 if not result.error else 0.5,
+                ))
+                full_text_parts.append(plain_text if plain_text.strip() else f"[{label}]")
+
+        safe_markdown = result.markdown.strip() if result.markdown else ""
+        if not blocks and safe_markdown:
+            blocks.append(OcrBlock(
+                type="Text",
+                text=safe_markdown,
+                bbox=[0, 0, page_width, page_height],
+                confidence=0.9,
+            ))
+            full_text_parts.append(safe_markdown)
+
+        responses.append(OcrResponse(
+            blocks=blocks,
+            full_text="\n\n".join(full_text_parts),
+            page_width=page_width,
+            page_height=page_height,
+            processing_time_ms=0,
+        ))
+
+    elapsed_ms = int((time.time() - start) * 1000)
+    log.info(f"OCR Batch complete: {len(batch)} pages, {elapsed_ms}ms")
+
+    return OcrBatchResponse(
+        responses=responses,
+        total_processing_time_ms=elapsed_ms
     )
 
 
