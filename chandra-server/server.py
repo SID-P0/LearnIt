@@ -70,10 +70,13 @@ class MlxInferenceManager:
             messages = [{"role": "user", "content": [{"type": "image"}, {"type": "text", "text": text_prompt}]}]
             formatted_prompt = self.processor.apply_chat_template(messages, add_generation_prompt=True)
             
+            from chandra.model.util import scale_to_fit
+            scaled_image = scale_to_fit(item.image)
+            
             result = generate(
                 model=self.model,
                 processor=self.processor,
-                image=[item.image],
+                image=[scaled_image],
                 prompt=formatted_prompt,
                 max_tokens=4096,
                 verbose=True
