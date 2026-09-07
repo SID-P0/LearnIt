@@ -354,7 +354,7 @@ async function goToChapter(index) {
     
     // 2. Batch the remaining pages in chunks of 4
     const remainingPages = pageImages.slice(1);
-    const BATCH_SIZE = 4;
+    const BATCH_SIZE = 1;
     
     for (let i = 0; i < remainingPages.length; i += BATCH_SIZE) {
         const chunk = remainingPages.slice(i, i + BATCH_SIZE);
