@@ -79,9 +79,14 @@ class MlxInferenceManager:
                 image=[scaled_image],
                 prompt=formatted_prompt,
                 max_tokens=4096,
-                verbose=True
+                verbose=True,
+                eos_token_id=self.processor.tokenizer.eos_token_id
             )
             raw_text = result.text
+            
+            # 8-bit models sometimes hallucinate past the end token, so we forcefully clip it
+            if "<|im_end|>" in raw_text:
+                raw_text = raw_text.split("<|im_end|>")[0]
             
             chunks = parse_chunks(raw_text, item.image, bbox_scale=1000)
             

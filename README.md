@@ -23,8 +23,6 @@ source venv/bin/activate
 python server.py
 ```
 
-*Note: The very first time you start the server on a new machine, it will download the 10.5 GB Chandra model. PyTorch will also take 1-3 minutes to compile the GPU shaders on its first scan.*
-
 ## 2. Run the SvelteKit Frontend
 
 Once the Python server says `Uvicorn running on http://0.0.0.0:8010`, open a **second** terminal tab in the root project folder:
