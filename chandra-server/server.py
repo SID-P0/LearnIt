@@ -54,7 +54,7 @@ inference_manager = None
 
 
 class MlxInferenceManager:
-    def __init__(self, model_id="jwindle47/chandra-ocr-2-8bit-mlx"):
+    def __init__(self, model_id="1qh/chandra-ocr-2-4bit-mlx"):
         from mlx_vlm import load
         self.model, self.processor = load(model_id)
 
@@ -82,6 +82,9 @@ class MlxInferenceManager:
                 image=[scaled_image],
                 prompt=formatted_prompt,
                 max_tokens=4096,
+                # Add these sampler parameters:
+                repetition_penalty=1.15,
+                repetition_context_size=64,
                 verbose=True,
                 eos_tokens=[self.processor.tokenizer.eos_token_id]
             )
