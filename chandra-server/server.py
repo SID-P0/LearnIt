@@ -54,7 +54,7 @@ inference_manager = None
 
 
 class MlxInferenceManager:
-    def __init__(self, model_id="1qh/chandra-ocr-2-4bit-mlx"):
+    def __init__(self, model_id="jwindle47/chandra-ocr-2-8bit-mlx"):
         from mlx_vlm import load
         self.model, self.processor = load(model_id)
 
