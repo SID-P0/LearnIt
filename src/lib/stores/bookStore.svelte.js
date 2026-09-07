@@ -350,9 +350,10 @@ async function goToChapter(index) {
   // Kick off OCR
   if (pageImages.length > 0) {
     // 1. Process the very first page immediately so the user can start reading!
-    ocrSinglePage(pageImages[0].pageNum);
+    // We await this so the Python server's GPU compilation/warmup phase doesn't get hammered by 2 concurrent requests.
+    await ocrSinglePage(pageImages[0].pageNum);
     
-    // 2. Batch the remaining pages in chunks of 4
+    // 2. Batch the remaining pages
     const remainingPages = pageImages.slice(1);
     const BATCH_SIZE = 1;
     
