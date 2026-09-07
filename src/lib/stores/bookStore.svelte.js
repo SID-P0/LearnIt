@@ -356,11 +356,13 @@ async function goToChapter(index) {
     const remainingPages = pageImages.slice(1);
     const BATCH_SIZE = 1;
     
-    for (let i = 0; i < remainingPages.length; i += BATCH_SIZE) {
-        const chunk = remainingPages.slice(i, i + BATCH_SIZE);
-        // Fire and forget (async background processing)
-        ocrBatchPages(chunk.map(p => p.pageNum));
-    }
+    // Process sequentially in the background
+    (async () => {
+        for (let i = 0; i < remainingPages.length; i += BATCH_SIZE) {
+            const chunk = remainingPages.slice(i, i + BATCH_SIZE);
+            await ocrBatchPages(chunk.map(p => p.pageNum));
+        }
+    })();
   }
 
   chapterLoadStatus = 'done';
