@@ -68,7 +68,10 @@ class MlxInferenceManager:
         for item in batch:
             text_prompt = item.prompt if getattr(item, "prompt", None) else PROMPT_MAPPING.get(item.prompt_type, "Convert this image to markdown.")
             messages = [{"role": "user", "content": [{"type": "image"}, {"type": "text", "text": text_prompt}]}]
-            formatted_prompt = self.processor.apply_chat_template(messages, add_generation_prompt=True)
+            
+            # The default MLX chat template incorrectly injects <think> tags, which breaks the Qwen2-VL model's stopping criteria
+            formatted_prompt = self.processor.apply_chat_template(messages, add_generation_prompt=False)
+            formatted_prompt += "<|im_start|>assistant\n"
             
             from chandra.model.util import scale_to_fit
             scaled_image = scale_to_fit(item.image)
