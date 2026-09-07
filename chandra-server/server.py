@@ -59,23 +59,26 @@ class MlxInferenceManager:
         self.model, self.processor = load(model_id)
 
     def generate(self, batch):
-        from mlx_vlm.utils import generate_step
+        from mlx_vlm import generate
         from chandra.output import parse_chunks, parse_markdown, extract_images
         from chandra.prompts import PROMPT_MAPPING
         from chandra.model.schema import BatchOutputItem
         
         output = []
         for item in batch:
-            prompt = item.prompt if getattr(item, "prompt", None) else PROMPT_MAPPING.get(item.prompt_type, "Convert this image to markdown.")
+            text_prompt = item.prompt if getattr(item, "prompt", None) else PROMPT_MAPPING.get(item.prompt_type, "Convert this image to markdown.")
+            messages = [{"role": "user", "content": [{"type": "image"}, {"type": "text", "text": text_prompt}]}]
+            formatted_prompt = self.processor.apply_chat_template(messages, add_generation_prompt=True)
             
-            raw_text = generate_step(
+            result = generate(
                 model=self.model,
                 processor=self.processor,
-                image=item.image,
-                prompt=prompt,
+                image=[item.image],
+                prompt=formatted_prompt,
                 max_tokens=4096,
                 verbose=False
             )
+            raw_text = result.text
             
             chunks = parse_chunks(raw_text, item.image, bbox_scale=1000)
             
