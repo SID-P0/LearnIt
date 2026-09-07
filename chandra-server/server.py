@@ -76,7 +76,7 @@ class MlxInferenceManager:
                 image=[item.image],
                 prompt=formatted_prompt,
                 max_tokens=4096,
-                verbose=False
+                verbose=True
             )
             raw_text = result.text
             
