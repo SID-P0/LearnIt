@@ -83,7 +83,7 @@ class MlxInferenceManager:
                 prompt=formatted_prompt,
                 max_tokens=4096,
                 verbose=True,
-                eos_token_id=self.processor.tokenizer.eos_token_id
+                eos_tokens=[self.processor.tokenizer.eos_token_id]
             )
             raw_text = result.text
             
