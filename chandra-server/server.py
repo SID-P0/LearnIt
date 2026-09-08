@@ -128,6 +128,26 @@ async def load_models():
         inference_manager = MlxInferenceManager()
     else:
         log.info("Loading Chandra OCR model (HuggingFace local)... (first run downloads weights)")
+        
+        try:
+            from transformers import AutoModelForImageTextToText, BitsAndBytesConfig
+            import torch
+            
+            original_from_pretrained = AutoModelForImageTextToText.from_pretrained
+            
+            @classmethod
+            def custom_from_pretrained(cls, *args, **kwargs):
+                log.info("Injecting 8-bit bitsandbytes quantization into HuggingFace model loader...")
+                if "quantization_config" not in kwargs:
+                    kwargs["quantization_config"] = BitsAndBytesConfig(load_in_8bit=True)
+                # Remove explicit dtype as 8-bit quantization manages its own weights
+                kwargs.pop("dtype", None)
+                return original_from_pretrained.__func__(cls, *args, **kwargs)
+                
+            AutoModelForImageTextToText.from_pretrained = custom_from_pretrained
+        except ImportError:
+            log.warning("transformers or bitsandbytes not installed, skipping quantization injection.")
+
         from chandra.model import InferenceManager
         inference_manager = InferenceManager(method="hf")
 

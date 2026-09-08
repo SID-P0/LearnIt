@@ -1,0 +1,9 @@
+node_modules
+.git
+.DS_Store
+.svelte-kit
+build
+chandra-server/venv
+chandra-server/__pycache__
+__pycache__
+*.pyc
