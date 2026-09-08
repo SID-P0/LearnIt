@@ -51,9 +51,9 @@ async function renderPageImage(pageNum) {
     return pageImageCache[pageNum];
   }
 
-  console.log(`[BookStore] Rendering page ${pageNum} via pdfjs canvas (scale 2.0)...`);
+  console.log(`[BookStore] Rendering page ${pageNum} via pdfjs canvas (scale 3.0, PNG)...`);
   const page = await pdfDoc.getPage(pageNum);
-  const viewport = page.getViewport({ scale: 2.0 });
+  const viewport = page.getViewport({ scale: 3.0 });
 
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d');
@@ -66,7 +66,7 @@ async function renderPageImage(pageNum) {
 
   await page.render({ canvasContext: ctx, viewport }).promise;
 
-  const base64Image = canvas.toDataURL('image/jpeg', 0.85);
+  const base64Image = canvas.toDataURL('image/png');
   pageImageCache[pageNum] = base64Image;
   console.log(`[BookStore] Page ${pageNum} rendered — canvas ${canvas.width}x${canvas.height}, base64 size: ${(base64Image.length / 1024).toFixed(0)}KB`);
   return base64Image;
@@ -358,20 +358,13 @@ async function goToChapter(index) {
 
   // Kick off OCR
   if (pageImages.length > 0) {
-    // 1. Process the very first page immediately so the user can start reading!
-    // We await this so the Python server's GPU compilation/warmup phase doesn't get hammered by 2 concurrent requests.
-    await ocrSinglePage(pageImages[0].pageNum);
+    // Default to 1 for testing fp16 memory limits. Can be overridden in .env
+    const BATCH_SIZE = import.meta.env.VITE_OCR_BATCH_SIZE ? parseInt(import.meta.env.VITE_OCR_BATCH_SIZE) : 1;
     
-    // 2. Batch the remaining pages
-    const remainingPages = pageImages.slice(1);
-    
-    // Default to 4 for production CUDA GPUs. Can be overridden in .env (e.g., VITE_OCR_BATCH_SIZE=1 for Mac testing)
-    const BATCH_SIZE = import.meta.env.VITE_OCR_BATCH_SIZE ? parseInt(import.meta.env.VITE_OCR_BATCH_SIZE) : 4;
-    
-    // Process sequentially in the background
+    // Process all pages sequentially in background batches
     (async () => {
-        for (let i = 0; i < remainingPages.length; i += BATCH_SIZE) {
-            const chunk = remainingPages.slice(i, i + BATCH_SIZE);
+        for (let i = 0; i < pageImages.length; i += BATCH_SIZE) {
+            const chunk = pageImages.slice(i, i + BATCH_SIZE);
             await ocrBatchPages(chunk.map(p => p.pageNum));
         }
     })();
